@@ -4,10 +4,75 @@ from utils import eval_candidate_lag_gridsearch_NARMA, eval_candidate_signal_gen
     eval_candidate_signal_gen_horizon, \
     eval_candidate_signal_gen_multiple_random_sequences_adaptive_budget, eval_candidate_custom_data_signal_gen, \
     eval_candidate_lag_gridsearch_NARMA_multitask
+from simulator import NetworkArmSimulator
 import pickle
 import os
 import copy
 import time
+from arm_model import Arm2Link
+
+def cmaes_IM(start_net, train_torques, val_torques, max_it, pop_size, eval_reps, alphas, lag_grid,
+             dir, name, warmup, save_every=1):
+    params = start_net.get_serialized_parameters()
+    opts = cma.CMAOptions()
+    opts['maxiter'] = max_it
+    opts['popsize'] = pop_size
+    std = .3
+    es = cma.CMAEvolutionStrategy(params, std, opts)
+    param_hist = np.zeros((max_it, pop_size, len(params)))
+    val_hist = np.zeros((max_it, pop_size, eval_reps))
+    lag_hist = np.zeros_like(val_hist)
+    std_hist = np.zeros((max_it,))
+    gen = 0
+    arm = Arm2Link()
+
+    def save(net):
+        data = {
+            'validation performance': val_hist,
+            'parameters': param_hist,
+            'evolutionary strategy': es,
+            'cma stds': std_hist,
+            'example net': net,
+            'train data': train_torques,
+            'validation data': val_torques,
+            'alphas': alphas,
+            'start net': start_net
+        }
+        file = open(dir + '/' + name + '.p', "wb")
+        pickle.dump(data, file)
+        file.close()
+
+    while not es.stop():
+        t_start = time.time()
+        candidate_solutions = es.ask()
+        for c, cand in enumerate(candidate_solutions):
+
+            param_hist[gen, c, :] = cand
+            std_hist[gen] = es.sigma
+
+            for rep in range(eval_reps):
+                arm.reset()
+                # Make sure to resample (i.e. re-generate) a network for every repetition
+                new_net = start_net.get_new_network_from_serialized(cand)
+                sim = NetworkArmSimulator(new_net, arm)
+                sim.train_IM_simple(train_torques, lag_grid, warmup=warmup, alphas=alphas)
+                val_hist[gen, c, rep] = sim.test_IM_simple(val_torques, warmup=warmup)
+                lag_hist[gen, c, rep] = sim.lag
+
+        # save every m iterations
+        if (gen + 1) % save_every == 0:
+            save(new_net)
+
+        val_scores = np.mean(val_hist[gen, :, :], axis=-1)
+        print(val_scores)
+        es.tell(candidate_solutions, val_scores)
+        print('Gen ', gen)
+        gen += 1
+        t_end = time.time()
+        duration = t_end - t_start
+        print('This generation took: ' + str(duration))
+    es.result_pretty()
+
 
 def cmaes_alg_gma_pop_timeseries_prediction_old(start_net, train_data, val_data, max_it, pop_size,
                                                 eval_reps, std, alphas, lag_grid=np.array(range(0, 15)), save_every=1,

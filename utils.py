@@ -73,7 +73,7 @@ def nrmse(input_signal, target_signal):
         - target_signal : array
     """
     # check_signal_dimensions(input_signal, target_signal)
-
+    assert input_signal.shape == target_signal.shape
     if len(target_signal) == 1:
         raise NotImplementedError('The NRMSE is not defined for signals of length 1 since they have no variance.')
 

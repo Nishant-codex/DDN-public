@@ -1,4 +1,6 @@
 import tkinter as tk
+from tkinter.constants import HORIZONTAL
+
 from PIL import Image, ImageTk
 import numpy as np
 from skimage.draw import line_aa, disk
@@ -52,7 +54,7 @@ class DistDelayGUI(object):
         y_range = self.DDN.y_range
         width = x_range[1] - x_range[0]
         height = y_range[1] - y_range[0]
-        window_width = 500
+        window_width = 300
 
         self.spacing = window_width/width
         self.dot_size = 5
@@ -62,6 +64,13 @@ class DistDelayGUI(object):
         self.root = tk.Tk()
         self.conn_hist = np.zeros(shape=(100,))
         self.energy_use = np.zeros(shape=(100,))
+        self.out_hist = np.zeros(shape=(100,))
+        self.error_hist = np.zeros(shape=(100,))
+        self.fm_error_hist = np.zeros(shape=(100,2))
+        self.error_hist_av = np.zeros(shape=(100,))
+        self.inner_hist = np.zeros(shape=(100,))
+        self.real_out_hist = np.zeros(shape=(100,))
+        self.in_hist = np.zeros(shape=(100,self.DDN.size_in))
         self.time_axis_plots_ms = np.arange(0, 100, 1) * self.DDN.dt * 1000
 
         grid = self.DDN.coordinates
@@ -85,7 +94,9 @@ class DistDelayGUI(object):
         self.scale_base = self.draw_scale()
 
         self.canvas = tk.Canvas(self.frame1, width=self.h + 100, height=self.w + 100)
-        self.canvas.grid(row=0, column=0)
+        self.canvas2 = tk.Canvas(self.frame1, width=self.h + 100, height=self.w + 100)
+        self.canvas.grid(row=1, column=0)
+        self.canvas2.grid(row=2, column=0)
         # self.canvas.create_text(100, self.h- 100, text="HELLO WORLD", fill="black", font=('Helvetica 15 bold'))
 
         # self.canvas2 = tk.Canvas(self.frame3, width=self.h + 50, height=self.w + 50)
@@ -101,35 +112,167 @@ class DistDelayGUI(object):
         def connection_update_callback():
             self.reset_connections()
 
+        self.debug_label = tk.Label(self.frame1, text="", font=("Helvetica", 15))
+        self.debug_label.grid(row=0, column=0)
+
         self.button = tk.Button(self.frame2, text="Update connection visualization", command=connection_update_callback)
         self.button.grid(row=0, column=1)
+        self.lr_slider = tk.Scale(self.frame2, orient=HORIZONTAL, from_=0, to=1, resolution=.01)
+        self.lr_slider.grid(row=1, column=1)
+        self.lr_label = tk.Label(self.frame2, text="scale learning rate", font=("Helvetica", 10))
+        self.lr_label.grid(row=1, column=2)
+        self.lr_slider.set(0)
+        self.clamp_slider = tk.Scale(self.frame2, orient=HORIZONTAL, from_=0, to=1, resolution=.01)
+        self.clamp_slider.grid(row=2, column=1)
+        self.clamp_slider.set(0)
+        self.clamp_label = tk.Label(self.frame2, text="clamp output", font=("Helvetica", 10))
+        self.clamp_label.grid(row=2, column=2)
         self.set_connections()
         # self.max_connectivity = np.product(self.DDN.connectivity.shape)
 
-    def update_plots(self):
-        # self.ax[0].clear()
-        # self.ax[0].plot(self.time_axis_plots_ms, self.conn_hist)
-        # self.ax[0].set_ylim(0, 2)
-        # self.ax[0].set_title('Spectral radius')
-        # self.ax[0].set_xlabel('Time (ms)')
-        # self.ax[0].set_ylabel(r'$\rho(W)$')
+    def update_sliders(self):
+        lr_val = self.lr_slider.get()
+        clamp_val = self.clamp_slider.get()
+        self.DDN.clamp_scale = clamp_val
+        self.DDN.lr_scale = lr_val
 
+    def update_debug(self, text):
+        if not text is None:
+            self.debug_label.config(text=text)
+
+    def update_plots(self, p_error, error_scale, legend):
+        # self.out_plot(self.ax[0])
+        # self.error_plot(self.ax[0])
+        self.ax[0].clear()
         self.ax[1].clear()
-        self.ax[1].plot(self.time_axis_plots_ms, self.energy_use)
-        self.ax[1].set_ylim(0, 5)
-        self.ax[1].set_title('Network power')
-        self.ax[1].set_xlabel('Time (ms)')
-        self.ax[1].set_ylabel('Power (W)')
-
+        self.in_plot_arm(self.ax[0], legend)
+        # self.inner_plot(self.ax[1])
+        self.p_error_plot(self.ax[1], p_error, error_scale)
+        # self.weight_hist_plot(self.ax[1])
         self.canvas3.draw()
-        # self.conn_hist[:-1] = self.conn_hist[1:]
+
+    def update_arm(self, arm, target=None, fm_prediction=None):
+        w = self.w
+        h = int(self.h)
+        s = 50
+        arm_base = np.zeros((w, h, 3))
+        x, y = arm.position()
+        p0 = (int(w/2), int(h/2))
+        p1 = (p0[0] + int(x[1] * s), p0[1] + int(y[1] * s))
+        p2 = (p0[0] + int(x[2] * s), p0[1] + int(y[2] * s))
+
+        rr, cc = disk((p2[0], p2[1]), self.dot_size)
+        arm_base[rr, cc, :] = 1
+
+        rr, cc, val = line_aa(p0[0], p0[1], p1[0], p1[1])
+        arm_base[rr, cc, :] = np.array([val, val, val]).T
+        rr, cc, val = line_aa(p1[0], p1[1], p2[0], p2[1])
+        arm_base[rr, cc, :] = np.array([val, val, val]).T
+
+        if target is not None:
+            xt, yt = target
+            t = (p0[0] + int(xt * s), p0[1] + int(yt * s))
+            rr, cc = disk((t[0], t[1]), self.dot_size)
+            arm_base[rr, cc, 0] = 1
+
+        if fm_prediction is not None:
+            x_pred, y_pred = arm.position([fm_prediction[0, 0], fm_prediction[0, 1]])
+            p1_fm = (p0[0] + int(x_pred[1] * s), p0[1] + int(y_pred[1] * s))
+            p2_fm = (p0[0] + int(x_pred[2] * s), p0[1] + int(y_pred[2] * s))
+
+            rr, cc = disk((p2_fm[0], p2_fm[1]), self.dot_size)
+            arm_base[rr, cc, 0] = 1
+
+            rr, cc, val = line_aa(p0[0], p0[1], p1_fm[0], p1_fm[1])
+            arm_base[rr, cc, :] = np.array([val, val, val]).T
+            rr, cc, val = line_aa(p1_fm[0], p1_fm[1], p2_fm[0], p2_fm[1])
+            arm_base[rr, cc, :] = np.array([val, val, val]).T
+
+        return arm_base
+
+
+    def weight_hist_plot(self, ax, bins=50):
+        ax.hist(self.updated_weights_flattened, bins=bins)
+        ax.set_title("Updated weight distribution")
+        ax.set_xlabel("Weight value")
+        ax.set_ylabel("Count")
+
+    def in_plot_arm(self, ax, arm_legend=None):
+        ax.plot(self.time_axis_plots_ms, self.in_hist)
+        ax.set_ylim(-.1, 1.1)
+        ax.set_title('Network input')
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Amplitude')
+        if arm_legend is not None:
+            ax.legend(arm_legend, loc='upper left', fontsize='small')
+
+        self.in_hist[:-1] = self.in_hist[1:]
+        self.in_hist[-1] = self.DDN.A[self.DDN.neurons_in, 0]
+
+    def out_plot(self, ax):
+        # self.out_hist = self.out_hist/((np.max(self.out_hist) - np.min(self.out_hist)) + .00001)
+        ax.plot(self.time_axis_plots_ms, self.out_hist)
+        ax.plot(self.time_axis_plots_ms, self.in_hist)
+        ax.plot(self.time_axis_plots_ms, self.real_out_hist)
+        ax.set_ylim(0, 2)
+        ax.set_title('Network Output & input')
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Amplitude')
+        self.out_hist[:-1] = self.out_hist[1:]
+        self.in_hist[:-1] = self.in_hist[1:]
+        self.real_out_hist[:-1] = self.real_out_hist[1:]
+        self.out_hist[-1] = self.DDN.A[self.DDN.neurons_out, 0]
+        self.real_out_hist[-1] = self.DDN.real_out
+        self.in_hist[-1] = self.DDN.A[self.DDN.neurons_in, 0]
+
+
+    def inner_plot(self, ax):
+        ax.plot(self.time_axis_plots_ms, self.inner_hist)
+        ax.set_ylim(0, 100)
+        ax.set_title('Activity inner product')
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Inner product activity')
+        self.inner_hist[:-1] = self.inner_hist[1:]
+        act = self.DDN.A[self.DDN.neurons_res, 0]
+        self.inner_hist[-1] = act @ act.T
+
+    def p_error_plot(self, ax, error, scale):
+        ax.plot(self.time_axis_plots_ms, self.fm_error_hist)
+        ax.set_ylim(-scale, scale)
+        ax.set_title('Prediction Error')
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Absolute error')
+        self.fm_error_hist[:-1] = self.fm_error_hist[1:]
+        self.fm_error_hist[-1] = error
+
+    def error_plot(self, ax):
+        ax.plot(self.time_axis_plots_ms, self.error_hist)
+        ax.plot(self.time_axis_plots_ms, self.error_hist_av)
+
+        ax.set_ylim(0, 100)
+        ax.set_title('Prediction Error')
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Absolute error')
+        ax.legend(['Error', 'Time Window Average'])
+        self.error_hist[:-1] = self.error_hist[1:]
+        self.error_hist[-1] = np.abs(self.DDN.out_error)
+
+
+        self.error_hist_av[:-1] = self.error_hist_av[1:]
+        self.error_hist_av[-1] = np.abs(self.DDN.error_average)
+    def energy_plot(self, ax):
+        ax.plot(self.time_axis_plots_ms, self.energy_use)
+        ax.set_ylim(0, 10)
+        ax.set_title('Network power')
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Power (W)')
         self.energy_use[:-1] = self.energy_use[1:]
-        # spectral_radius = np.max(np.linalg.eigvals(sum(self.DDN.W_masked_list)))
-        # self.conn_hist[-1] = spectral_radius
         self.energy_use[-1] = self.DDN.get_current_power_bio()
 
     def set_connections(self):
         weights = self.DDN.W
+        self.updated_weights = weights
+        self.updated_weights_flattened = np.reshape(self.updated_weights, (np.product(self.updated_weights.shape),))
         self.connections_pos = None
         self.connections_neg = None
         self.get_connection_base(weights)
@@ -142,10 +285,11 @@ class DistDelayGUI(object):
                      (all_d == 0)
 
     def reset_connections(self):
-        weights = sum(self.DDN.W_masked_list)
+        self.updated_weights = sum(self.DDN.W_masked_list)
+        self.updated_weights_flattened = np.reshape(self.updated_weights, (np.product(self.updated_weights.shape),))
         self.connections_pos = None
         self.connections_neg = None
-        self.get_connection_base(weights)
+        self.get_connection_base(self.updated_weights)
         dot_ex, dot_in = self.grid2dots(True)
         all_d = np.stack([dot_in + dot_ex + self.scale_base,
                           dot_in + dot_ex + self.scale_base,
@@ -250,7 +394,7 @@ class DistDelayGUI(object):
                 dots_in[rr, cc] = -a
         return dots_ex, dots_in
 
-    def update_a(self):
+    def update_a(self, arm=None, target=None, fm_prediction=None, p_error=None, error_scale=1, legend=None, debug_label=None):
         """
         Updates the gui according to current neuron activity.
         :return: None
@@ -260,10 +404,17 @@ class DistDelayGUI(object):
         img_d = np.stack([dot_in, dot_ex, zer], axis=-1)
         img = self.img_c + img_d
         img = get_tk_im(img)
-        self.update_plots()
+        if not (arm is None):
+            img_arm = np.transpose(self.update_arm(arm, target, fm_prediction), [1, 0, 2])
+            img_arm = get_tk_im(img_arm)
+
+            self.canvas2.create_image(3, 3, anchor="nw", image=img_arm)
+        self.update_plots(p_error, error_scale, legend)
         self.canvas.create_image(5, 5, anchor="nw", image=img)
+        self.update_sliders()
         # self.canvas2.create_image(10, 40, anchor='nw', image=img_conn)
         self.root.update()
+        self.update_debug(debug_label)
 
     def get_single_frame(self):
         dot_ex, dot_in = self.grid2dots()

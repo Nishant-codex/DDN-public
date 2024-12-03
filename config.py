@@ -85,19 +85,19 @@ def get_p_dict_heterogeneity_exp(K, x_range, y_range, start_location_var=0.003, 
             'lims': (0, float('inf'))
         },
         'decay_mean': {
-            'val': np.array([0.9]),
+            'val': np.array([0.99]),
             'evolve': True,
             'range': (0, 1),
             'lims': (0, 1)
         },
         'decay_scaling': {
-            'val': np.array([.1]),
+            'val': np.array([.01]),
             'evolve': True,
             'range': (0, 1),
             'lims': (0, float('inf'))
         },
         'in_mean': {
-            'val': .8 * np.ones(shape=(K,)),
+            'val': .5 * np.ones(shape=(K,)),
             'evolve': True,
             'range': (-2, 2),
             'lims': (-float('inf'), float('inf'))
@@ -109,7 +109,7 @@ def get_p_dict_heterogeneity_exp(K, x_range, y_range, start_location_var=0.003, 
             'lims': (0, float('inf'))
         },
         'in_connectivity': {
-            'val': .6 * np.ones(shape=(K,)),
+            'val': .8 * np.ones(shape=(K,)),
             'evolve': True,
             'range': (0, 1),
             'lims': (0, 1)
@@ -128,37 +128,37 @@ def get_p_dict_heterogeneity_exp_adaptive(K, x_range, y_range, start_location_va
                                           start_bias_mean=start_bias_mean, start_bias_var=start_bias_var)
 
     p_dict['lr_mean'] = {
-        'val': .1 * np.ones(shape=(K, K)),
+        'val': .05 * np.ones(shape=(K, K)),
         'evolve': True,
         'range': (0, .3),
         'lims': (0, float('inf'))
     }
     p_dict['lr_scaling'] = {
-        'val': .1 * np.ones(shape=(K, K)),
+        'val': 0.001 * np.ones(shape=(K, K)),
         'evolve': True,
         'range': (0, .1),
         'lims': (0, float('inf'))
     }
     p_dict['theta0_mean'] = {
-        'val': .1 * np.ones(shape=(K,)),
+        'val': .8 * np.ones(shape=(K,)),
         'evolve': True,
-        'range': (0, .25),
-        'lims': (0, .25)  # TODO: why?
-    },
+        'range': (.25, 1),
+        'lims': (.25, float('inf'))
+    }
     p_dict['theta0_scaling'] = {
-        'val': .1 * np.ones(shape=(K)),
+        'val': 0 * np.ones(shape=(K)),
         'evolve': True,
         'range': (0, .1),
         'lims': (0, float('inf'))
     }
     p_dict['in_lr_mean'] = {
-        'val': .1 * np.ones(shape=(K,)),
+        'val': .05 * np.ones(shape=(K,)),
         'evolve': True,
         'range': (0, .3),
         'lims': (0, float('inf'))
     }
     p_dict['in_lr_scaling'] = {
-        'val': .1 * np.ones(shape=(K)),
+        'val': 0.001 * np.ones(shape=(K)),
         'evolve': True,
         'range': (0, .1),
         'lims': (0, float('inf'))
@@ -166,13 +166,13 @@ def get_p_dict_heterogeneity_exp_adaptive(K, x_range, y_range, start_location_va
     p_dict['out_lr_mean'] = p_dict['in_lr_mean']
     p_dict['out_lr_scaling'] = p_dict['in_lr_scaling']
     p_dict['out_theta0'] = {
-        'val': np.array([.1]),
+        'val': np.array([.7]),
         'evolve': True,
-        'range': (0, .25),
-        'lims': (0, .25)
+        'range': (.25, 1),
+        'lims': (.25, float('inf'))
     }
     p_dict['out_mean'] = {
-        'val': .8 * np.ones(shape=(K,)),
+        'val': .1 * np.ones(shape=(K,)),
         'evolve': True,
         'range': (-2, 2),
         'lims': (-float('inf'), float('inf'))
@@ -184,10 +184,30 @@ def get_p_dict_heterogeneity_exp_adaptive(K, x_range, y_range, start_location_va
         'lims': (0, float('inf'))
     }
     p_dict['out_connectivity'] = {
-        'val': .6 * np.ones(shape=(K,)),
+        'val': 1 * np.ones(shape=(K,)),
         'evolve': True,
         'range': (0, 1),
         'lims': (0, 1)
     }
+    p_dict['feedback_mean'] = {
+        'val': .1 * np.ones(shape=(K,)),
+        'evolve': True,
+        'range': (-2, 2),
+        'lims': (-float('inf'), float('inf'))
+    }
+    p_dict['feedback_scaling'] = {
+        'val': .1 * np.ones(shape=(K,)),
+        'evolve': True,
+        'range': (0, 2),
+        'lims': (0, float('inf'))
+    }
+    p_dict['feedback_connectivity'] = {
+        'val': 1 * np.ones(shape=(K,)),
+        'evolve': True,
+        'range': (0, 1),
+        'lims': (0, 1)
+    }
+    p_dict['feedback_lr_mean'] = p_dict['in_lr_mean']
+    p_dict['feedback_lr_scaling'] = p_dict['in_lr_scaling']
 
     return p_dict

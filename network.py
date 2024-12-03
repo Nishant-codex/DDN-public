@@ -37,9 +37,13 @@ class DistDelayNetworkOld(object):
         self.B = longest_delay_needed  # Buffer size
         self.A_init = np.zeros((self.N, self.B))
         self.A = np.copy(self.A_init)
+        self.A_average = np.copy(self.A[:, 0])
+        self.out_error = 1
+        self.error_average = 1
 
         self.neurons_in = input_n  # Indices for input neurons
         self.neurons_out = output_n  # Indices for output neurons
+        self.neurons_res = list((set(range(self.N)) - set(self.neurons_in)) - set(self.neurons_out))
         self.decay = decay
         self.weight_decay = 0.01
         if self.W is not None:
@@ -74,17 +78,22 @@ class DistDelayNetworkOld(object):
         self.W_masked_list_init = [np.copy(partial_W) for partial_W in self.W_masked_list]
 
         self.var_delays = var_delays
-
-        # compute connectivity matrix for use in structural plasticity
-
-    def reset_weigths(self, W):
-        self.W = W
-        self.lr = self.lr * np.array(self.W > 0, dtype='uint8')
-        self.W_masked_list = [self.W]
-        self.lr_masked_list = [self.lr]
-        if not (self.W is None) and self.var_delays:
-            self.compute_masked_W()
-            self.compute_masked_lr()
+        self.clamp_scale = 1
+        self.lr_scale = 1
+        if len(output_n) > 0:
+            self.out_mask = np.zeros_like(self.W)
+            self.out_mask[self.neurons_out, :] = 1 # post x pre
+            self.out_mask_comp = np.ones_like(self.W)
+            self.out_mask_comp[self.neurons_out, :] = 0
+        self.real_out = 0
+    # def reset_weigths(self, W):
+    #     self.W = W
+    #     self.lr = self.lr * np.array(self.W > 0, dtype='uint8')
+    #     self.W_masked_list = [self.W]
+    #     self.lr_masked_list = [self.lr]
+    #     if not (self.W is None) and self.var_delays:
+    #         self.compute_masked_W()
+    #         self.compute_masked_lr()
 
     def reset_network(self):
         """
@@ -142,16 +151,32 @@ class DistDelayNetworkOld(object):
         # apply activation function
         y = self.activation_func(neuron_inputs) * self.n_type
         self.A[:, 0] = (1 - self.decay) * self.A[:, 0] + self.decay * y
-
+        # self.real_out = self.A[self.neurons_out, 0]
         # Input neuron is forced to input value
         self.clamp_input(input)
+        return np.copy(self.A[self.neurons_res, 0])
 
-    def update_step_adaptive(self, input):
+    def update_error(self, output, tau):
+        # # Update average activity
+        # d_A_average = self.A[:, 0] - self.A_average
+        # d_A_average = d_A_average / tau_average
+        # self.A_average += d_A_average
+        self.out_error = (self.real_out - output)
+        d_error_average = self.out_error - self.error_average
+        d_error_average = d_error_average / tau
+        self.error_average += d_error_average
+
+    def update_step_adaptive(self, input, output=None):
+        if not (output is None):
+            self.update_error(output, 35)
         self.update_step(input)
         if self.var_delays:
-            self.delayed_BCM()
+            self.delayed_BCM(self.out_error)
+            if not (output is None):
+                self.clamp_output(self.out_error)
         else:
             self.simple_BCM()
+        return self.A[:, 0]
 
     def clamp_input(self, input_array):
         """
@@ -165,8 +190,27 @@ class DistDelayNetworkOld(object):
         input_ind = np.reshape(input_ind, (len(input_ind),))
         self.A[input_ind, 0] = input_array
 
+    def clamp_output(self, output_array):
+        """
+        Set the output value of the input neurons to that of a given output array.
+        :param output_array: ndarray
+            N_i by 1 array with N_i the number of output neurons.
+        :return: None
+        """
+        assert len(output_array) == len(self.neurons_out)
+        assert self.clamp_scale >= 0
+        if self.clamp_scale == 0:
+            pass
+        out_ind = self.neurons_out
+        out_ind = np.reshape(out_ind, (len(out_ind),))
+        current_output = self.A[out_ind, 0]
+        self.A[out_ind, 0] = self.clamp_scale * output_array + (1-self.clamp_scale) * current_output
+
     def simple_BCM(self):
         assert self.theta_window > 1, 'Need a activity history to compute theta'
+        assert self.lr_scale >= 0
+        if self.lr_scale == 0:
+            pass
         self.update_theta()
         act_post = self.A[:, 0]
         post_term = np.expand_dims(act_post * (act_post - self.theta), -1)
@@ -178,28 +222,46 @@ class DistDelayNetworkOld(object):
         dW = dW.T * self.lr
         self.W += dW
 
-    def delayed_BCM(self):
+    def delayed_BCM(self, error):
         assert self.B >= 2, 'Need a non-zero delay for delayed BCM'
+        assert self.lr_scale >= 0
         self.update_theta()
-        act_post = self.A[:, 0]
-        post_term = np.expand_dims(act_post * (act_post - self.theta), -1)
+        if self.lr_scale == 0:
+            pass
+        act_post = np.abs(self.A[:, 0])
+        post_term = np.expand_dims(act_post * ((act_post - self.theta) * self.n_type), -1)
         # dW = np.zeros_like(self.W)
         for d, Wd in enumerate(self.W_masked_list):
-            act_pre = self.A[:, d]
-            dWd = (post_term @ np.expand_dims(act_pre, 0)).T
+            # REMEMBER: W is of dimensions [post x pre]
+            act_pre = np.abs(self.A[:, d])
+            dWd = (post_term @ np.expand_dims(act_pre , 0))
             dWd = dWd - self.weight_decay * Wd
             # dWd = dWd / np.repeat(np.expand_dims(self.theta, -1), act_pre.shape, axis=-1).T
             # dWd = dWd * np.repeat(np.expand_dims(sigmoid_der(act_post), -1), act_pre.shape, axis=-1).T
-            dWd = dWd.T * self.lr_masked_list[d]
-            Wd += dWd
+            dWd = dWd * self.lr_masked_list[d]
+            # reservoir_dWd = self.lr_scale * dWd * self.out_mask_comp
+            # output_dWd = self.lr_scale * dWd * (error * self.out_mask)
+            Wd += self.lr_scale * dWd #reservoir_dWd + output_dWd
+            np.clip(Wd, 0, np.inf, out=Wd)
             # dW += dWd
             # Structural plasticity
             # Wd *= self.adjacency
 
-    def update_theta(self):
-        hist_mat = np.copy(self.A[:, :self.theta_window])
-        hist_mat = np.average(hist_mat, axis=1)**2 / self.theta_y0
-        self.theta = hist_mat
+    # def update_theta(self):
+    #     hist_mat = np.copy(self.A[:, :self.theta_window])
+    #     hist_mat = np.average(hist_mat, axis=1)**2 / self.theta_y0
+    #     self.theta = hist_mat
+    #
+    def update_theta(self, tau=60):
+        self.update_A_average(tau)
+        # self.theta = (self.A_average ** 2) / self.theta_y0
+        self.theta = (self.A_average / self.theta_y0) ** 2
+
+    def update_A_average(self, tau_average):
+        # Update average activity
+        d_A_average = self.A[:, 0] - self.A_average
+        d_A_average = d_A_average/tau_average
+        self.A_average += d_A_average
 
     def create_similar_by_max_delay(self, new_max_delay):
 

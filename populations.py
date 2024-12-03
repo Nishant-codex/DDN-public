@@ -2,6 +2,7 @@ import random
 
 import numpy as np
 from numpy.f2py.auxfuncs import throw_error
+from numpy.ma.core import shape
 
 from network import DistDelayNetwork, DistDelayNetworkOld, DistDelayNetworkSpiking, tanh_activation, sigmoid_activation
 import copy
@@ -1933,7 +1934,7 @@ class GMMPopulationOld(DistDelayNetworkOld):
 
         return np.array(serialized_parameters)
 
-class AdaptiveFlexiblePopulation(DistDelayNetwork):
+class AdaptiveFlexiblePopulation(DistDelayNetworkOld):
     def __init__(self, N, x_range, y_range, dt, in_loc, out_loc, size_in, size_out, p_dict,
                  act_func=sigmoid_activation):
         assert p_dict.keys() == {'mix', 'mu_x', 'mu_y', 'variance_x', 'variance_y', 'correlation', 'inhibitory',
@@ -1941,7 +1942,8 @@ class AdaptiveFlexiblePopulation(DistDelayNetwork):
                                  'decay_mean', 'decay_scaling', 'in_scaling', 'in_mean', 'in_connectivity', 'lr_mean',
                                  'lr_scaling', 'theta0_mean', 'theta0_scaling', 'in_lr_mean', 'in_lr_scaling',
                                  'out_lr_mean', 'out_lr_scaling', 'out_theta0', 'out_mean',
-                                 'out_scaling', 'out_connectivity'}
+                                 'out_scaling', 'out_connectivity', 'feedback_mean', 'feedback_scaling',
+                                 'feedback_connectivity', 'feedback_lr_mean', 'feedback_lr_scaling' }
 
         self.init_evo_info(p_dict)
         self.N = N
@@ -1979,7 +1981,7 @@ class AdaptiveFlexiblePopulation(DistDelayNetwork):
         self.decay_means = p_per_cluster(p_dict['decay_mean']['val'], self.K, 1)
         self.decay_scaling = p_per_cluster(p_dict['decay_scaling']['val'], self.K, 1)
         self.lr_mean = p_per_cluster(p_dict['lr_mean']['val'], self.K, 2)
-        self.lr_mean = p_per_cluster(p_dict['lr_scaling']['val'], self.K, 2)
+        self.lr_scaling = p_per_cluster(p_dict['lr_scaling']['val'], self.K, 2)
         self.theta0_mean = p_per_cluster(p_dict['theta0_mean']['val'], self.K, 1)
         self.theta0_scaling = p_per_cluster(p_dict['theta0_scaling']['val'], self.K, 1)
         self.in_lr_mean = p_per_cluster(p_dict['in_lr_mean']['val'], self.K, 1)
@@ -1990,47 +1992,78 @@ class AdaptiveFlexiblePopulation(DistDelayNetwork):
         self.out_mean = p_per_cluster(p_dict['out_mean']['val'], self.K, 1)
         self.out_scaling = p_per_cluster(p_dict['out_scaling']['val'], self.K, 1)
         self.out_connectivity = p_per_cluster(p_dict['out_connectivity']['val'], self.K, 1)
-
+        self.feedback_connectivity = p_per_cluster(p_dict['feedback_connectivity']['val'], self.K, 1)
+        self.feedback_mean = p_per_cluster(p_dict['feedback_mean']['val'], self.K, 1)
+        self.feedback_scaling = p_per_cluster(p_dict['feedback_scaling']['val'], self.K, 1)
+        self.feedback_lr_mean = p_per_cluster(p_dict['feedback_lr_mean']['val'], self.K, 1)
+        self.feedback_lr_scaling = p_per_cluster(p_dict['feedback_lr_scaling']['val'], self.K, 1)
         self.p_dict = p_dict
 
         # Get neuron location grid
         Sigma = self.get_loc_covariance()
         mu = np.array([self.mu_x, self.mu_y]).T
 
-        grid, n_type, clusters = get_gaussian_mixture_config(N - size_in, self.mix, mu, self.inhibitory, Sigma,
+        grid, n_type, clusters = get_gaussian_mixture_config(N - size_in - size_out, self.mix, mu, self.inhibitory, Sigma,
                                                              x_range, y_range)
 
         width = x_range[1] - x_range[0]
         height = y_range[1] - y_range[0]
+        if len(np.array(in_loc).shape) == 1:
+            mu_x_in, mu_y_in = self.in_loc
+            Sigma_in = .2 * (np.array(
+                [
+                    [width, 0],
+                    [0, height]
+                ]))
+            Sigma_in = np.expand_dims(Sigma_in, 0)
+            grid, n_type, clusters = set_inout_cluster(grid, n_type, clusters, size_in, mu_x_in, mu_y_in,
+                                                       Sigma=Sigma_in,
+                                                       x_range=x_range, y_range=y_range, one_cluster=True)
 
-        mu_x_in, mu_y_in = self.in_loc
+        else:
+            assert self.size_in == self.in_loc.shape[0]
+            grid_in = self.in_loc
+            ntype_in = np.ones(shape=(self.size_in,))
+            clusters_in = np.array(np.ones_like(ntype_in) * (np.max(clusters) + 1), dtype='int32')
+            grid, n_type, clusters = combine_clusters(grid_in, ntype_in, clusters_in, grid, n_type, clusters)
+        if not (out_loc is None):
+            if len(np.array(out_loc).shape) == 1:
+                mu_x_out, mu_y_out = self.out_loc
+                Sigma_out = .2 * (np.array(
+                    [
+                        [width, 0],
+                        [0, height]
+                    ]))
+                Sigma_out = np.expand_dims(Sigma_out, 0)
 
-        Sigma_in = 0.002 * (np.array(
-            [
-                [width, 0],
-                [0, height]
-            ])) ** 2
-        Sigma_in = np.expand_dims(Sigma_in, 0)
+                grid, n_type, clusters = set_inout_cluster(grid, n_type, clusters, size_out, mu_x_out, mu_y_out,
+                                                           Sigma=Sigma_out,
+                                                           x_range=x_range, y_range=y_range, one_cluster=True)
+            else:
+                assert self.size_out == self.out_loc.shape[0]
+                grid_out = self.out_loc
+                ntype_out = np.ones(shape=(self.size_out,))
+                clusters_out = np.array(np.ones_like(ntype_out) * (np.max(clusters) + 1), dtype='int32')
+                grid, n_type, clusters = combine_clusters(grid_out, ntype_out, clusters_out, grid, n_type, clusters)
 
-        grid, n_type, clusters = set_inout_cluster(grid, n_type, clusters, size_in, mu_x_in, mu_y_in,
-                                                   Sigma=Sigma_in,
-                                                   x_range=x_range, y_range=y_range)
         sort_key = np.argsort(clusters)
         clusters_sorted = clusters[sort_key]
         n_type_sorted = n_type[sort_key]
         grid_sorted = grid[sort_key]
 
-        input_index = np.array(range(N - size_in, N))
-        output_index = np.array(range(0, N - size_in))
+        input_index = np.array(range(N - size_in - size_out, N - size_out))
+        output_index = np.array(range(N - size_out, N))
+        # reservoir_index = np.array(range(0, N - size_out - size_in))
 
         self.clusters = clusters_sorted
 
+
         # Get weight matrix
-        W, bias, decay = self.get_cluster_based_params()
+        W, bias, decay, lr, y0 = self.get_cluster_based_params()
 
         super().__init__(weights=W, bias=bias, n_type=n_type_sorted, coordinates=grid_sorted, decay=decay,
                          input_n=input_index,
-                         output_n=output_index, activation_func=act_func, dt=dt)
+                         output_n=output_index, activation_func=act_func, dt=dt, lr=lr, theta_y0=y0)
 
     def init_evo_info(self, p_dict):
         self.total_serial_p_size = 0
@@ -2040,6 +2073,221 @@ class AdaptiveFlexiblePopulation(DistDelayNetwork):
             if p_dict[p_name]['evolve']:
                 serial_size = p_dict[p_name]['val'].size
                 self.total_serial_p_size += serial_size
+
+    def get_loc_covariance(self):
+        var_mat = np.zeros((self.K, 2, 2))
+        corr_mat = np.ones((self.K, 2, 2))
+        x_var = p_per_cluster(self.p_dict['variance_x']['val'], self.K, 1)
+        y_var = p_per_cluster(self.p_dict['variance_y']['val'], self.K, 1)
+        xy_corr = p_per_cluster(self.p_dict['correlation']['val'], self.K, 1)
+        for i in range(self.K):
+            var_mat[i, 0, 0] = x_var[i]
+            var_mat[i, 1, 1] = y_var[i]
+            corr_mat[i, 0, 1] = xy_corr[i]
+            corr_mat[i, 1, 0] = xy_corr[i]
+
+        Sigma = np.matmul(np.matmul(var_mat, corr_mat), var_mat)
+        return Sigma
+
+    def get_cluster_based_params(self,dist='normal'):
+
+        # y0 = np.zeros((N,))
+        # for i in range(N):
+        #     c = int(clusters[i])
+        #     sf = bias_scaling[c]
+        #     bias[i] = np.random.uniform(-0.5, 0.5) * sf + bias_mean[c]
+        #     n_decay[i] = decay[c]
+        #     y0[i] = np.random.normal(y0_mean[c], y0_scaling[c])
+        # y0 = np.minimum(np.maximum(y0, np.ones_like(y0) * .25), np.ones_like(y0))
+        # W = get_weight_matrix(weight_mean, weight_scaling, clusters)
+        # lr = get_lr(clusters, lr_mean, lr_scaling)
+
+        assert dist in ['normal', 'uniform']
+        N = self.N
+        K = self.K
+        W = np.zeros((N, N))
+        b = np.zeros((N,))
+        decay = np.zeros((N,))
+        y0 = np.zeros((N,))
+        lr = np.zeros((N, N))
+
+        means = np.zeros(shape=(K + 2, K + 2))
+        scales = np.zeros(shape=(K + 2, K + 2))
+        b_means = np.zeros(shape=(K + 2,))
+        b_scales = np.zeros(shape=(K + 2,))
+        connectivity = np.zeros(shape=(K + 2, K + 2))
+        decay_means = np.zeros(shape=(K + 2,))
+        decay_scales = np.zeros(shape=(K + 2,))
+        y0_means = np.zeros(shape=(K + 2,))
+        y0_scales = np.zeros(shape=(K + 2,))
+        lr_means = np.zeros(shape=(K + 2, K + 2))
+        lr_scales = np.zeros(shape=(K + 2, K + 2))
+
+        means[:K, :K] = self.weight_mean
+        means[:K, -2] = self.in_mean
+        means[-1, :K] = self.out_mean
+        means[:K, -1] = self.feedback_mean
+        b_means[:K] = self.bias_mean
+        scales[:K, :K] = self.weight_scaling
+        scales[:K, -2] = self.in_scaling
+        scales[-1, :K] = self.out_scaling
+        scales[:K, -1] = self.feedback_scaling
+        b_scales[:K] = self.bias_scaling
+        connectivity[:K, :K] = self.res_connectivity
+        connectivity[:K, -2] = self.in_connectivity
+        connectivity[-1, :K] = self.out_connectivity
+        connectivity[:K, -1] = self.feedback_connectivity
+        decay_means[:K] = self.decay_means
+        decay_means[K:] = 1
+        decay_scales[:K] = self.decay_scaling
+        decay_scales[K:] = 0
+        y0_means[:K] = self.theta0_mean
+        y0_means[-2] = 0
+        y0_means[-1] = self.out_theta0
+        y0_scales[:K] = self.theta0_scaling
+        lr_means[:K, :K] = self.lr_mean
+        lr_means[:K, -2] = self.in_lr_mean
+        lr_means[-1, :K] = self.out_lr_mean
+        lr_means[:K, -1] = self.feedback_lr_mean
+        lr_scales[:K, :K] = self.lr_scaling
+        lr_scales[:K, -2] = self.in_lr_scaling
+        lr_scales[-1, :K] = self.out_lr_scaling
+        lr_scales[:K, -1] = self.feedback_lr_scaling
+
+        for c1 in range(K + 2):
+            c_inds_1 = np.argwhere(self.clusters == c1)
+            c_size_1 = len(c_inds_1)
+            if c_size_1 > 0:
+                b_mean = b_means[c1]
+                b_scale = b_scales[c1]
+                d_mean = decay_means[c1]
+                d_scale = decay_scales[c1]
+                y0_mean = y0_means[c1]
+                y0_scale = y0_scales[c1]
+                if dist == 'normal':
+                    b_vec = np.random.normal(loc=b_mean, scale=b_scale, size=(c_size_1,))
+                    a_vec = np.random.normal(loc=d_mean, scale=d_scale, size=(c_size_1,))
+                    y0_vec = np.random.normal(loc=y0_mean, scale=y0_scale, size=(c_size_1,))
+                if dist == 'uniform':
+                    b_vec = np.random.uniform(low=b_mean-.5 * b_scale, high=b_mean+.5 * b_scale, size=(c_size_1,))
+                    a_vec = np.random.uniform(low=d_mean-.5 * d_scale, high=d_mean+.5 * d_scale, size=(c_size_1,))
+                    y0_vec = np.random.uniform(low=y0_mean-.5 * y0_scale, high=y0_mean+.5 * y0_scale, size=(c_size_1,))
+                b_vec = np.clip(b_vec, self.bias_lims[0], self.bias_lims[1])
+                a_vec = np.clip(a_vec, 0, 1)
+                y0_vec = np.clip(y0_vec, self.p_dict['theta0_mean']['lims'][0], self.p_dict['theta0_mean']['lims'][1])
+
+                b[np.min(c_inds_1): np.max(c_inds_1) + 1] = b_vec
+                decay[np.min(c_inds_1): np.max(c_inds_1) + 1] = a_vec
+                y0[np.min(c_inds_1): np.max(c_inds_1) + 1] = y0_vec
+
+                for c2 in range(K + 2):
+                    clip_lims = self.weight_lims
+                    lr_clip_lims = self.p_dict['lr_mean']['lims']
+
+                    if c2 == K:
+                        clip_lims = self.p_dict['in_mean']['lims']
+                        lr_clip_lims = self.p_dict['in_lr_mean']['lims']
+                    if c2 == K + 1:
+                        clip_lims = self.p_dict['out_mean']['lims']
+                        lr_clip_lims = self.p_dict['out_lr_mean']['lims']
+
+                    c_inds_2 = np.argwhere(self.clusters == c2)
+                    c_size_2 = len(c_inds_2)
+                    if c_size_2 > 0:
+                        if c1 == K: # no connections back to the input neuron
+                            c_mat = np.zeros(shape=(c_size_1, c_size_2))
+                            lr_mat = np.zeros(shape=(c_size_1, c_size_2))
+                        else:
+                            mean = means[c1, c2]
+                            scale = scales[c1, c2]
+                            lr_mean = lr_means[c1, c2]
+                            lr_scale = lr_scales[c1, c2]
+
+                            if dist == 'normal':
+                                c_mat = np.random.normal(loc=mean, scale=scale, size=(c_size_1, c_size_2))
+                                lr_mat = np.random.normal(loc=lr_mean, scale=lr_scale, size=(c_size_1, c_size_2))
+                            if dist == 'uniform':
+                                c_mat = np.random.uniform(low=mean-.5*scale, high=mean+.5*scale, size=(c_size_1, c_size_2))
+                                lr_mat = np.random.uniform(low=lr_mean-.5*lr_scale, high=lr_mean+.5*lr_scale, size=(c_size_1, c_size_2))
+                            c_mat = np.clip(c_mat, clip_lims[0], clip_lims[1])
+                            lr_mat = np.clip(lr_mat, lr_clip_lims[0], lr_clip_lims[1])
+                        conn = connectivity[c1, c2]
+                        connectivity_mask = np.random.uniform(0, 1, size=(c_size_1, c_size_2)) < conn
+                        c_mat *= connectivity_mask # Prune according to connectivity parameter
+                        W[np.min(c_inds_1):np.max(c_inds_1)+1, np.min(c_inds_2):np.max(c_inds_2)+1] = c_mat
+                        lr[np.min(c_inds_1):np.max(c_inds_1)+1, np.min(c_inds_2):np.max(c_inds_2)+1] = lr_mat
+        return W, b, decay, lr, y0
+
+    def get_serialized_parameters(self):
+        def scale_down(params, middle, scale):
+            scaled = params - middle
+            scaled = scaled / scale
+            return scaled
+        serialized = []
+
+        for p_name in self.p_dict:
+            if self.p_dict[p_name]['evolve']:
+                val = self.p_dict[p_name]['val']
+                range = self.p_dict[p_name]['range']
+                middle = np.sum(range) / 2
+                scale = range[1] - range[0]
+                flat_val = np.reshape(val, (np.prod(val.shape),))
+                scaled_flat_val = scale_down(flat_val, middle, scale)
+                serialized += list(scaled_flat_val)
+        assert len(serialized) == self.total_serial_p_size
+        return serialized
+
+    def get_p_dict_from_serialized(self, serialized_parameters):
+        assert len(serialized_parameters) == self.total_serial_p_size
+        new_parameter_dict = {}
+        for p_name in self.p_dict:
+            if self.p_dict[p_name]['evolve']:
+                p_shape = self.p_dict[p_name]['val'].shape
+                p_lims = self.p_dict[p_name]['lims']
+                p_range = self.p_dict[p_name]['range']
+
+                p_len = np.prod(p_shape)
+                p_middle = np.sum(p_range) / 2
+                p_scale = p_range[1] - p_range[0]
+
+                new_p_flat_scaled = np.array(serialized_parameters[:p_len])
+                new_p_flat_unclipped = scale_up(new_p_flat_scaled, p_middle, p_scale)
+                new_p_flat = np.clip(new_p_flat_unclipped, p_lims[0], p_lims[1])
+                new_p = np.reshape(new_p_flat, p_shape)
+
+                serialized_parameters = serialized_parameters[p_len:]
+
+                new_p_dict = {}
+                new_p_dict['val'] = new_p
+                new_p_dict['evolve'] = True
+                new_p_dict['range'] = p_range
+                new_p_dict['lims'] = p_lims
+                new_parameter_dict[p_name] = new_p_dict
+            else:
+                new_parameter_dict[p_name] = self.p_dict[p_name]
+
+        assert len(serialized_parameters) == 0
+        return new_parameter_dict
+
+    def get_new_network_from_serialized(self, serialized_parameters):
+        new_p_dict = self.get_p_dict_from_serialized(serialized_parameters)
+        net_args = {
+            'N': self.N,
+            'x_range': self.x_range,
+            'y_range': self.y_range,
+            'size_in': self.size_in,
+            'size_out': self.size_out,
+            'dt': self.dt,
+            'in_loc': self.in_loc,
+            'size_in': self.size_in,
+            'size_out': self.size_out,
+            'act_func': self.activation_func,
+            'p_dict': new_p_dict,
+            'out_loc': self.out_loc
+        }
+        new_flex_pop = AdaptiveFlexiblePopulation(**net_args)
+        return new_flex_pop
+
 
 class FlexiblePopulation(DistDelayNetworkOld):
     def __init__(self, N, x_range, y_range, dt, in_loc, size_in, size_out,
@@ -2106,7 +2354,7 @@ class FlexiblePopulation(DistDelayNetworkOld):
 
         grid, n_type, clusters = set_inout_cluster(grid, n_type, clusters, size_in, mu_x_in, mu_y_in,
                                                    Sigma=Sigma_in,
-                                                   x_range=x_range, y_range=y_range)
+                                                   x_range=x_range, y_range=y_range, one_cluster=True)
         sort_key = np.argsort(clusters)
         clusters_sorted = clusters[sort_key]
         n_type_sorted = n_type[sort_key]
@@ -2600,8 +2848,17 @@ def get_gaussian_mixture_config(N, w, mu, inhibitory, Sigma=None, x_range=None, 
 
     return grid, n_type, clusters
 
+def combine_clusters(grid1, ntype1, cluster1, grid2, ntype2, cluster2):
+    assert grid1.shape[1] == grid2.shape[1] == 2
+    assert grid1.shape[0] == ntype1.shape[0] == cluster1.shape[0]
+    assert grid2.shape[0] == ntype2.shape[0] == cluster2.shape[0]
+    new_grid = np.concatenate([grid1, grid2], axis=0)
+    new_ntype = np.concatenate([ntype1, ntype2], axis=0)
+    new_cluster = np.concatenate([cluster1, cluster2], axis=0)
+    return new_grid, new_ntype , new_cluster
 
-def set_inout_cluster(grid, ntype, clusters, N, x=1, y=1, inhib=0.0, Sigma=None, x_range=None, y_range=None):
+
+def set_inout_cluster(grid, ntype, clusters, N, x=1, y=1, inhib=0.0, Sigma=None, x_range=None, y_range=None, one_cluster=False):
     new_grid = np.zeros((N + grid.shape[0], 2))
     new_ntype = np.ones((N + ntype.shape[0],))
     new_clusters = np.zeros((N + ntype.shape[0],))
@@ -2618,8 +2875,11 @@ def set_inout_cluster(grid, ntype, clusters, N, x=1, y=1, inhib=0.0, Sigma=None,
     new_grid[N:, :] = grid
     new_ntype[:N] = inout_ntype
     new_ntype[N:] = ntype
-    cluster_inds = list(range(int(np.max(clusters)) + 1, int(np.max(clusters)) + N + 1))
-    new_clusters[:N] = cluster_inds  #np.max(clusters) + 1
+    if one_cluster:
+        cluster_inds = np.max(clusters) + 1
+    else:
+        cluster_inds = list(range(int(np.max(clusters)) + 1, int(np.max(clusters)) + N + 1))
+    new_clusters[:N] = cluster_inds
     new_clusters[N:] = clusters
     return new_grid, new_ntype, new_clusters
 
