@@ -30,7 +30,7 @@ from tensorflow.python.ops import rnn
 from tensorflow.python.ops.rnn_cell_impl import RNNCell
 from FixedPointStore_leaky import FixedPointStore
 from FixedPointSearch_leaky import FixedPointSearch
-from parameters import par
+# from parameters import par
 import sys
 import config
 
