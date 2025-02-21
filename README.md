@@ -19,5 +19,4 @@ Code for NARMA hyperparameter optimisation using CMA-ES can be seen in
   same experiments
 
 ## Examples
-[random_ddn_example.py](examples/random_ddn_example.py) shows how to create and use a DDN or ESN, how to train a 
-and evaluate a readout layer, and how to visually simulate a network.
+[random_ddn_example.py](examples/random_ddn_example.py) shows how to create and use a DDN or ESN, how to train and evaluate a readout layer, and how to visually simulate a network.

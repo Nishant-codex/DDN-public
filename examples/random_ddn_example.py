@@ -1,5 +1,7 @@
 from datetime import date, datetime
 import argparse
+import sys 
+sys.path.append('C:/Users/Nishant Joshi/DDN_dynamics/DDN-public/')
 from populations import FlexiblePopulation
 import numpy as np
 from simulator import NetworkSimulator
@@ -46,33 +48,34 @@ if __name__ == '__main__':
     # ------------------------------------------------
 
     # ------ Training and evaluating readout layer for NARMA 10 task ------
-    # data_train = np.array(createNARMA10(8000)).reshape((2, 8000))
-    # data_val = np.array(createNARMA10(4000)).reshape((2, 4000))
-    # data_test = np.array(createNARMA10(4000)).reshape((2, 4000))
-    # from utils import eval_candidate_lag_gridsearch_NARMA
-    # # trains readouts for a number of lags, returns train scores, validation scores, and readout models for each lag
-    # # train scores and validation scores are given as NRMSE, smaller is better
-    # alphas = [10e-7, 10e-5, 10e-3]
-    # train_scores_lag, val_scores_lag, models_lag = eval_candidate_lag_gridsearch_NARMA(start_net,
-    #                                                                                    data_train,
-    #                                                                                    data_val,
-    #                                                                                    alphas=alphas)
-    # lag = np.argmin(val_scores_lag)  # determine best lag
-    # readout = models_lag[lag]  # select best model
-    #
-    # # Make predictions with readout layer
-    # sim.reset()
-    # sim.warmup(data_test[0,:400])
-    # test_act = sim.get_network_data(data_test[0,400:])
-    # predictions = readout.predict(test_act.T)
-    # # Plot predictions vs labels
-    # import matplotlib.pyplot as plt
-    # plot_start = 100
-    # plot_end = 150
-    #
-    # # Make sure to take lag into account, predictions are shifted back by lag timesteps
-    # plt.plot(predictions[plot_start:plot_end], label='prediction')
-    # plt.plot(data_test[1, 400 + plot_start - lag:400 + plot_end - lag], label='label')
-    # plt.legend()
-    # plt.show()
+    data_train = np.array(createNARMA10(8000)).reshape((2, 8000))
+    data_val = np.array(createNARMA10(4000)).reshape((2, 4000))
+    data_test = np.array(createNARMA10(4000)).reshape((2, 4000))
+    from utils import eval_candidate_lag_gridsearch_NARMA
+    # trains readouts for a number of lags, returns train scores, validation scores, and readout models for each lag
+    # train scores and validation scores are given as NRMSE, smaller is better
+    alphas = [10e-7, 10e-5, 10e-3]
+    train_scores_lag, val_scores_lag, models_lag = eval_candidate_lag_gridsearch_NARMA(start_net,
+                                                                                       data_train,
+                                                                                       data_val,
+                                                                                       alphas=alphas)
+    lag = np.argmin(val_scores_lag)  # determine best lag
+    readout = models_lag[lag]  # select best model
+    
+    # Make predictions with readout layer
+    sim.reset()
+    sim.warmup(data_test[0,:400])
+    test_act = sim.get_network_data(data_test[0,400:])
+    predictions = readout.predict(test_act.T)
+    # Plot predictions vs labels
+    import matplotlib.pyplot as plt
+    plot_start = 100
+    plot_end = 150
+    
+    # Make sure to take lag into account, predictions are shifted back by lag timesteps
+    plt.plot(predictions[plot_start:plot_end], label='prediction')
+    plt.plot(data_test[1, 400 + plot_start - lag:400 + plot_end - lag], label='label')
+    plt.legend()
+    plt.show()
     # ----------------------------------------------------------------
+
