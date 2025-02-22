@@ -344,7 +344,7 @@ class ESNCell_S(keras.layers.AbstractRNNCell):
         self.N = coordinates.shape[0]  # Number of neurons
         self.W = weights
         self.WBias = bias
-        self.n_type = tf.constant(n_type, dtype='float32')
+        self.n_type = np.array(n_type,dtype=np.float64)#tf.constant(n_type, dtype='float64')
         self.B = longest_delay_needed  # Buffer size
         self.A_init = np.zeros((self.N, self.B))
         self.A = np.copy(self.A_init)
@@ -418,7 +418,7 @@ class ESNCell_S(keras.layers.AbstractRNNCell):
             self.A = tf.compat.v1.assign(self.A ,A[0])
         else:            
 
-            self.A = tf.Variable(self.A_init ,dtype='float32')
+            self.A = tf.Variable(self.A_init ,dtype='float64')
 
 
     def reset_weights(self):
@@ -514,25 +514,25 @@ class ESNCell_S(keras.layers.AbstractRNNCell):
             shape=[self.N, self.N],
             initializer=self.rec_initializer,
             trainable=False,
-            dtype=self.dtype,
+            dtype=tf.float64,
         )
         self.recurrent_kernel_delayed = self.add_weight(
             name="recurrent_kernel_delayed",
             shape=[self.theta_window, self.N, self.N],
             initializer=self.rec_initializer_masked,
             trainable=False,
-            dtype=self.dtype,
+            dtype=tf.float64,
         )
 
         self.bias = self.add_weight(
             name="bias",
-            shape=[self.N],
+            shape=[self.N,1],
             initializer=self.bias_initializer,
             trainable=False,
-            dtype=self.dtype,
+            dtype=tf.float64,
         )
 
-        self.A = tf.Variable(self.A_init ,dtype='float32')
+        self.A = tf.Variable(self.A_init ,dtype='float64')
         self.built = True
 
     def call(self, input, state):
@@ -554,7 +554,7 @@ class ESNCell_S(keras.layers.AbstractRNNCell):
             in_matrix = state
             
             # Initialize neuron inputs with bias
-            neuron_inputs = tf.convert_to_tensor(self.WBias, dtype=tf.float32)  # Add bias weights first
+            neuron_inputs = tf.convert_to_tensor(self.WBias, dtype=tf.float64)  # Add bias weights first
 
             # Perform delayed recurrent operations
             if len(state.shape)>2:
@@ -565,26 +565,38 @@ class ESNCell_S(keras.layers.AbstractRNNCell):
             # Add the delayed inputs to the bias
             neuron_inputs += delayed_inputs
         else:
-            in_matrix = tf.cast(state[:, 0], dtype='float32')
-            neuron_inputs = tf.matmul(self.recurrent_kernel, in_matrix) + tf.convert_to_tensor(self.bias, dtype=tf.float32)
+        # output = tf.linalg.matmul(in_matrix, weights_matrix)
+
+
+            in_matrix = tf.cast(state, dtype='float64')
+            neuron_inputs = tf.matmul( self.recurrent_kernel,in_matrix  ) + tf.convert_to_tensor(self.bias, dtype=tf.float64)
 
         # Apply activation function
-        y = self.activation_func(neuron_inputs) * tf.constant(self.n_type, dtype='float32')
-        
+        if state.shape[1] > 1:
+            y = self.activation_func(neuron_inputs) * tf.constant(self.n_type, dtype='float64')     
+        else:
+            y = self.activation_func(neuron_inputs) * tf.expand_dims(tf.constant(self.n_type, dtype='float64'),1)
+
+
         # Update A with decay
         if len(state.shape)>2:
-            A_np = (1 - tf.constant(self.decay, dtype='float32')) * state[:,:, 0] + tf.constant(self.decay, dtype='float32') * y
+            A_np = (1 - tf.constant(self.decay, dtype='float64')) * state[:,:, 0] + tf.constant(self.decay, dtype='float64') * y
+        elif state.shape[1] > 1:
+            A_np = (1 - tf.constant(self.decay, dtype='float64')) * state[:, 0] + tf.constant(self.decay, dtype='float64') * y
         else:
-            A_np = (1 - tf.constant(self.decay, dtype='float32')) * state[:, 0] + tf.constant(self.decay, dtype='float32') * y
-        
+            A_np = tf.expand_dims((1 - tf.constant(self.decay, dtype='float64')),1) * state + tf.expand_dims(tf.constant(self.decay, dtype='float64'),1) * y
+
         # Assign new values to the first column of A
         if len(state.shape)>2:
-            state = tf.compat.v1.assign(state[:,:, 0], A_np)
-        else:
+            state = tf.compat.v1.assign(state[:, :, 0], A_np)
+        elif state.shape[1] > 1:
             state = tf.compat.v1.assign(state[:, 0], A_np)
+        else: 
+            state = tf.compat.v1.assign(state[:, 0], A_np[:,0])
 
         if len(state.shape)>2:
             assert input[0].shape.is_compatible_with(self.neurons_in.shape)
+
         else:
             assert input.shape.is_compatible_with(self.neurons_in.shape)
 
@@ -592,9 +604,9 @@ class ESNCell_S(keras.layers.AbstractRNNCell):
         input_ind = np.reshape(input_ind, (len(input_ind),))
         
         if len(state.shape)>2:
-            state = tf.compat.v1.assign(state[:, -1:, 0], tf.cast(state[:, -1:, 0]*0+input,dtype='float32')) 
+            state = tf.compat.v1.assign(state[:, -1:, 0], tf.cast(state[:, -1:, 0]*0+input,dtype='float64')) 
         else:
-            state = tf.compat.v1.assign(state[-1:, 0], tf.cast(state[0, 0]*0+input[0],dtype='float32')) 
+            state = tf.compat.v1.assign(state[-1:, 0], tf.cast(state[0, 0]*0+input[0],dtype='float64')) 
 
         return state, state
 
