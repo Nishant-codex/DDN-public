@@ -42,7 +42,6 @@ def mse(target_signal, input_signal):
     error = (target_signal - input_signal) ** 2
     return error.mean()
 
-
 def nmse(target_signal, input_signal):
     """
     nmse(input_signal, target_signal)-> error
@@ -62,7 +61,6 @@ def nmse(target_signal, input_signal):
 
     return mse(target_signal, input_signal) / var
 
-
 def nrmse(input_signal, target_signal):
     """
     nrmse(input_signal, target_signal)-> error
@@ -79,7 +77,6 @@ def nrmse(input_signal, target_signal):
 
     return np.sqrt(nmse(target_signal, input_signal))
 
-
 def state_entropy(A):
     N = len(A)
     std = np.std(A)
@@ -90,7 +87,6 @@ def state_entropy(A):
             state_kernel.append(kern)
     H2 = -1 * np.log((1 / N ** 2) * np.sum(state_kernel))
     return H2
-
 
 def spectral_radius_norm(W, wanted_sr):
     v = np.linalg.eigvals(W)
@@ -117,13 +113,14 @@ def createNARMA(length=10000, system_order=10, coef=[.3, .05, 1.5, .1]):
                          coef[2] * inputs[k - (system_order - 1)] * inputs[k] + coef[3]
     return inputs, outputs
 
-
 def createNARMA10(length=10000):
     return createNARMA(length=length, system_order=10, coef=[.3, .05, 1.5, .1])
 
-
 def createNARMA30(length=10000):
     return createNARMA(length=length, system_order=30, coef=[.2, .04, 1.5, .001])
+
+
+
 
 def eval_candidate_lag_gridsearch_NARMA(network, train_data, val_data, warmup=400,
                                         lag_grid=range(0, 15), alphas=[10e-14, 10e-13, 10e-12]):
@@ -176,7 +173,7 @@ def eval_candidate_lag_gridsearch_NARMA(network, train_data, val_data, warmup=40
 
 
 
-    return train_performance_per_lag, val_performance_per_lag, model_per_lag
+    return val_performance_per_lag, model_per_lag
 
 def eval_candidate_lag_gridsearch_NARMA_multitask(network, input_train, input_val, labels_train, labels_val, warmup=400,
                                         lag_grid=range(0, 15), alphas=[10e-14, 10e-13, 10e-12]):
@@ -240,8 +237,6 @@ def eval_candidate_lag_gridsearch_NARMA_multitask(network, input_train, input_va
 
     return train_performance_per_task, val_performance_per_task, model_per_task
 
-
-
 def eval_candidate_signal_gen(network, train_data, val_data, error_margin=.1, max_it_val=500, warmup=400,
                               alphas=[10e-14, 10e-13, 10e-12]):
     # Training: train with one step ahead prediction
@@ -275,7 +270,6 @@ def eval_candidate_signal_gen(network, train_data, val_data, error_margin=.1, ma
         i += 1
 
     return i, model
-
 
 def eval_candidate_signal_gen_adaptive(network, unsupervised_data, train_data, val_data, error_margin=.1,
                                        max_it_val=500,
@@ -319,14 +313,12 @@ def eval_candidate_signal_gen_adaptive(network, unsupervised_data, train_data, v
 
     return i, model
 
-
 def create_folds(X, y, n_folds, groups):
     folds = []
     cv_object = KFold(n_splits = n_folds)
     for (train_indices, val_indices) in cv_object.split(X, y, groups=groups):
         folds.append((train_indices,val_indices))
     return folds
-
 
 def eval_candidate_signal_gen_NRMSE(network, n_sequences_unsupervised,
                                       n_sequences_supervised,
@@ -408,7 +400,6 @@ def eval_candidate_signal_gen_NRMSE(network, n_sequences_unsupervised,
         prediction_steps_across_sequences.append(j)
 
     return np.mean(prediction_steps_across_sequences), model, energy_use_across_sequences
-
 
 def eval_candidate_signal_gen_horizon(network, n_sequences_unsupervised,
                                       n_sequences_supervised,
@@ -567,7 +558,6 @@ def eval_candidate_custom_data_signal_gen(network, unsupervised_sequences, super
 
     return np.mean(prediction_steps_across_sequences), model
 
-
 def eval_candidate_signal_gen_multiple_random_sequences_adaptive_budget(network, n_sequences_unsupervised,
                                                                  n_sequences_supervised,
                                                                  n_sequences_validation,
@@ -664,7 +654,6 @@ def single_sample_NRSE(prediction, target, variance):
     error = np.sqrt(error) / variance
     return error
 
-
 def eval_candidate(network, train_data, val_data, warmup=400, lag=0):
     """
     Evaluates NRMSE of a DistDelayNetwork
@@ -719,7 +708,6 @@ def eval_candidate(network, train_data, val_data, warmup=400, lag=0):
 
     return train_performance, val_performance
 
-
 def plot_learning_curve(network, train_data, val_data, warmup=400, lag=0, ax=plt):
     train_input = train_data[0, :]
     train_labels = train_data[1, warmup:]
@@ -768,7 +756,6 @@ def plot_learning_curve(network, train_data, val_data, warmup=400, lag=0, ax=plt
     ax.plot(n_ticks, val_perf)
     ax.set_xlabel('N')
     ax.set_ylabel('NRMSE')
-
 
 def plot_learning_curve_signal_gen_supervised(network, unsupervised_data, train_data, val_data, warmup=400,
                                    alphas=[10e-14, 10e-13, 10e-12]):
@@ -995,7 +982,6 @@ def load_from_saved_ES(path, which_net=0):
     new_net = empty_net.get_new_network_from_serialized(net_params)
     return new_net
 
-
 def load_from_saved_ES_specific_gen(path, gen, ind=None):
     data = pkl.load(open(path, "rb"))
     empty_net = data['example net']
@@ -1010,7 +996,6 @@ def load_from_saved_ES_specific_gen(path, gen, ind=None):
     net_params = parameters[gen, ind]
     new_net = empty_net.get_new_network_from_serialized(net_params)
     return new_net
-
 
 def genome_memory_capacity(hyperparameters, start_net, max_delay, sequence_length, z_function=None, warmup_time=400,
                            alphas=[1, 10, 100], genome_reps=5, eval_reps=5, n_sequences_unsupervised=5,
@@ -1038,7 +1023,6 @@ def genome_memory_capacity(hyperparameters, start_net, max_delay, sequence_lengt
 
     return total_m_cap
 
-
 def genome_memory_capacity_evolvable(hyperparameters, start_net, max_delay, sequence_length, z_function=None, warmup_time=400,
                            alphas=[1, 10, 100], genome_reps=5, eval_reps=5):
     total_m_cap = []
@@ -1049,7 +1033,6 @@ def genome_memory_capacity_evolvable(hyperparameters, start_net, max_delay, sequ
 
     return total_m_cap
 
-
 def network_memory_capacity(network, max_delay, sequence_length, z_function=None, warmup_time=400, alphas=[1, 10, 100], reps=5):
     total_m_cap = []
     for i in range(reps):
@@ -1057,7 +1040,6 @@ def network_memory_capacity(network, max_delay, sequence_length, z_function=None
         total_m_cap.append(m_cap)
 
     return np.mean(total_m_cap, axis=0)
-
 
 def memory_capacity(network, max_delay, sequence_length, z_function=None, warmup_time=400, alphas=[1, 10, 100]):
     noise_input_train = np.random.uniform(size=sequence_length + warmup_time)
@@ -1092,7 +1074,6 @@ def memory_capacity(network, max_delay, sequence_length, z_function=None, warmup
         m_caps.append(MC)
 
     return m_caps
-
 
 def act_dimensionality(network_activity, variance_threshold=.95):
     _, s, _ = np.linalg.svd(network_activity)

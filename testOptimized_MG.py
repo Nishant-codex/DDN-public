@@ -107,6 +107,7 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--testsamples", action="store", type=int, default=502, help="Test sequence length")
     parser.add_argument("-s", "--testsequences", action="store", type=int, default=5, help="Number of test sequences per network")
     parser.add_argument("-g", "--maxgen", action="store", type=int, default=None, help="Takes best up to this generation")
+    parser.add_argument("-savepath", "--saveshere", action="store", type=str, default="./test_result_MG/", help="save here")
 
 
     args = parser.parse_args()
@@ -116,6 +117,7 @@ if __name__ == '__main__':
     n_test_sequences = config['testsequences']
     path = config['path']
     maxgen = config['maxgen']
+    savepath = config['saveshere']
     # Load data
     print("Loading hyperparameter optimization results from " + path)
 
@@ -158,7 +160,8 @@ if __name__ == '__main__':
             val, model, net = retrain_net_MG(net, results_dict, tau)
             _, t_performance = test_net_MG(net, model, error_margin, test_data_tau[tau])
             test_results[tau].append(t_performance)
-
+    # savepath
     save_path = path[:-2] + '_gen' + str(maxgen) + '_test_optimized.p'
+    print("Saving results to " + save_path)
     with open(save_path, 'wb') as f:
         pkl.dump(test_results, f)
