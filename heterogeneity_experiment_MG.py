@@ -3,7 +3,7 @@ import argparse
 from populations import FlexiblePopulation, AdaptiveFlexiblePopulation
 import numpy as np
 from network import sigmoid_activation
-from evolution import cmaes_multitask_narma, cmaes_mackey_glass_signal_gen_adaptive
+from evolution import cmaes_mackey_glass_signal_gen_multi_t
 from simulator import NetworkSimulator
 from config import propagation_vel, get_p_dict_like_p3_MG
 import os
@@ -25,15 +25,17 @@ if __name__ == '__main__':
     parser.add_argument("-k", "--clusters", action="store", help="number of GMM clusters to be used",
                         type=int, default=5)
     parser.add_argument("-nr", "--neurons", action="store", help="number of neurons", type=int, default=300)
+    parser.add_argument("-ff", "--feedforward", action="store_true", help="Run experiment with 0 reservoir connectivity")
 
     # Evolution & Task flags
     parser.add_argument("-e", "--error-margin", action="store", default=.1,
                         help="Define the blind prediction error margin in variance")
-    parser.add_argument("-t", "--tau_range", action="store", help="range of mackey-glass tau values to be used",
-                        nargs=2, type=float, default=[12, 22])
+    parser.add_argument("-vt", "--variable_tau", action="store_true", help="use multiple tau evaluation")
     parser.add_argument("-n", "--exponent_range", action="store",
                         help="range of mackey-glass exponent values to be used", nargs=2, type=float,
                         default=[10, 10])
+    parser.add_argument("-m", "--use_median", action="store_true",
+                        help="use median of resamlpes in evolution fitness")
 
     # Heterogeneity flags
     parser.add_argument("-dd", "--distributed_decay", action="store_true", help="Distributed decay")
@@ -50,8 +52,8 @@ if __name__ == '__main__':
     delay = config['delay']  # False for ESNs, True for DDNs
     N = config['neurons']  # Nr of nodes in reservoir
     K = config['clusters']  # Nr of sub-reservoirs/clusters
+    multi_t = config['variable_tau']
     distributed_decay = config['distributed_decay']  # False for fixed decay/leak rate, True for distributed
-    t_range = config['tau_range']  # range of randomly sampled task time parameters throughout evolution
     n_range = config['exponent_range']  # range of randomly sampled task time parameters throughout evolution
     error_margin = config['error_margin']
     adaptive = config['bcm']
@@ -59,7 +61,10 @@ if __name__ == '__main__':
     # decay/leak rate
     per_cluster_decay = config['cluster_decay']  # False for network wide decay parameters, True for
     # cluster-specific parameters
+    zero_conn = config['feedforward']
     suffix = config['suffix']  # Added at the end of save filename
+    use_median = config['use_median']
+
     if len(suffix) > 0:
         suffix = '_' + suffix
     net_type_name = 'BL'
@@ -104,7 +109,24 @@ if __name__ == '__main__':
         p_dict['variance_y']['evolve'] = False
         p_dict['correlation']['evolve'] = False
 
+    if zero_conn:
+        # Used to test networks with 0 internal connectivity. These are purely feedforward. In the case of DDNs, these
+        # function similar to a delay embedding.
+        suffix += '_zero_conn'
+        p_dict['connectivity']['evolve'] = False
+        p_dict['connectivity']['val'] *= 0
 
+    tau_list = [17, 17, 17, 17, 17]
+
+    if multi_t:
+        tau_list = [13, 15, 17, 19, 21]
+        suffix+= '_variable_tau'
+    else:
+        suffix+= '_fixed_tau'
+
+    aggregate = np.mean
+    if use_median:
+        aggregate = np.median
     activation_func = sigmoid_activation
     start_net = AdaptiveFlexiblePopulation(N, x_range, y_range, dt, in_loc, size_in, size_out,
                                    p_dict, act_func=activation_func)
@@ -113,8 +135,7 @@ if __name__ == '__main__':
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
-    filename = (str(date.today()) + '_' + net_type_name + '_' + dist_decay_name + '_' +
-                per_cluster_name + suffix)
+    filename = (str(date.today()) + '_' + net_type_name + '_' + dist_decay_name + '_' + suffix)
     print('Experiment will be saved as')
     print(filename + '.pkl')
 
@@ -127,19 +148,19 @@ if __name__ == '__main__':
         'n_seq_supervised': 5,
         'n_seq_validation': 5,
         'error_margin': error_margin,
-        'tau_range': t_range,
+        'tau_list': tau_list,
         'n_range': n_range,
         'max_it': 200,
         'pop_size': 20,
-        'eval_reps': 5,
         'dir': dirname,
         'name': filename,
-        'alphas': alphas
+        'alphas': alphas,
+        'aggregate': aggregate
     }
     if not adaptive:
         evo_params['n_unsupervised'] = 0
         evo_params['n_supervised'] = 1500
         evo_params['n_seq_unsupervised'] = 0
 
-    cmaes_mackey_glass_signal_gen_adaptive(**evo_params)
+    cmaes_mackey_glass_signal_gen_multi_t(**evo_params)
 
