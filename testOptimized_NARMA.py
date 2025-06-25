@@ -178,9 +178,9 @@ if __name__ == '__main__':
     resamples = 100 #config['resamples']
     n_test_samples = 502 #config['testsamples']
     n_test_sequences = 5 #config['testsequences']
-    path_dir = "C:/Users/Nishant Joshi/DDN_dynamics/DDN-public/heterogeneity_results/" #config['path']
+    path_dir = "./heterogeneity_results/" #config['path']
     maxgen = 150 #config['maxgen']
-    save_dir = "C:/Users/Nishant Joshi/DDN_dynamics/DDN-public/test_results_NARMA/"
+    save_dir = "./test_results_NARMA/"
     # Load data
     for path in os.listdir(path_dir):
     # path  = "2024-09-26_single_task_exp_BL_dist_decay_net_wide_gen150_test_optimized.p"

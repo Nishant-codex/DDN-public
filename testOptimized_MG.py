@@ -5,7 +5,7 @@ from simulator import NetworkSimulator
 from utils import single_sample_NRSE, eval_candidate_signal_gen_horizon
 from datetime import date
 import argparse
-
+import os
 
 def resample_net_MG_best(data_dict, maxgen=None):
     validation_scores = data_dict['validation performance']
@@ -94,74 +94,82 @@ def test_net_MG(network, model, error_margin, test_data):
         y_across_sequences.append(y)
     return y_across_sequences, prediction_steps_across_sequences
 
-
 def testVisualize(network, data):
     sim = NetworkSimulator(network, False)
     sim.visualize(data)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Experiment configuration",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("path", action="store", type=str, default="./", help="Evolution results data path")
-    parser.add_argument("-r", "--resamples", action="store", type=int, default=100, help="Number of resamples per test")
-    parser.add_argument("-t", "--testsamples", action="store", type=int, default=502, help="Test sequence length")
-    parser.add_argument("-s", "--testsequences", action="store", type=int, default=5, help="Number of test sequences per network")
-    parser.add_argument("-g", "--maxgen", action="store", type=int, default=None, help="Takes best up to this generation")
-    parser.add_argument("-savepath", "--saveshere", action="store", type=str, default="./test_result_MG/", help="save here")
+    # parser = argparse.ArgumentParser(description="Experiment configuration",
+    #                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    # parser.add_argument("path", action="store", type=str, default="./", help="Evolution results data path")
+    # parser.add_argument("-r", "--resamples", action="store", type=int, default=100, help="Number of resamples per test")
+    # parser.add_argument("-t", "--testsamples", action="store", type=int, default=502, help="Test sequence length")
+    # parser.add_argument("-s", "--testsequences", action="store", type=int, default=5, help="Number of test sequences per network")
+    # parser.add_argument("-g", "--maxgen", action="store", type=int, default=None, help="Takes best up to this generation")
+    # parser.add_argument("-savepath", "--saveshere", action="store", type=str, default="./test_result_MG/", help="save here")
 
 
-    args = parser.parse_args()
-    config = vars(args)
-    resamples = config['resamples']
-    n_test_samples = config['testsamples']
-    n_test_sequences = config['testsequences']
-    path = config['path']
-    maxgen = config['maxgen']
-    savepath = config['saveshere']
+    # args = parser.parse_args()
+    # config = vars(args)
+    # resamples = config['resamples']
+    # n_test_samples = config['testsamples']
+    # n_test_sequences = config['testsequences']
+    # path = config['path']
+    # maxgen = config['maxgen']
+    # savepath = config['saveshere']
+
+
+    resamples = 100 #config['resamples']
+    n_test_samples = 502 #config['testsamples']
+    n_test_sequences = 5 #config['testsequences']
+    path_dir = "./heterogeneity_results_MG/" #config['path']
+    maxgen = 150 #config['maxgen']
+    save_dir = "./test_results_MG/"
+
     # Load data
     print("Loading hyperparameter optimization results from " + path)
+    for path in os.listdir(path_dir):
+        with open(path, 'rb') as f:
+            results_dict = pkl.load(f)
 
-    with open(path, 'rb') as f:
-        results_dict = pkl.load(f)
+        tau_list = results_dict['tau list'] # get tau range from any of the results dict
+        x0_range = results_dict['start value range']
 
-    tau_list = results_dict['tau list'] # get tau range from any of the results dict
-    x0_range = results_dict['start value range']
+        # Generate test data
+        # n_test_samples = 502
+        test_data_tau = {}
+        warmup = 400
+        for tau in tau_list:
+            test_data = []
+            for seq in range(n_test_sequences):
+                test_sequence = datasets.mackey_glass(n_test_samples + warmup, tau=tau,
+                                                x0=np.random.uniform(x0_range[0], x0_range[1]))
+                test_data.append(test_sequence)
+            test_data_tau[tau] = test_data
 
-    # Generate test data
-    # n_test_samples = 502
-    test_data_tau = {}
-    warmup = 400
-    for tau in tau_list:
-        test_data = []
-        for seq in range(n_test_sequences):
-            test_sequence = datasets.mackey_glass(n_test_samples + warmup, tau=tau,
-                                              x0=np.random.uniform(x0_range[0], x0_range[1]))
-            test_data.append(test_sequence)
-        test_data_tau[tau] = test_data
+        test_results = {}
 
-    test_results = {}
+        resampled_networks = []
+        print("Sample networks")
 
-    resampled_networks = []
-    print("Sample networks")
+        for resample in range(resamples):
+            # best_net = resample_net_MG_worst(results_dict)
+            # testVisualize(best_net, test_data_tau[14][0])
+            best_net = resample_net_MG_best(results_dict, maxgen=maxgen)
+            resampled_networks.append(best_net)
 
-    for resample in range(resamples):
-        # best_net = resample_net_MG_worst(results_dict)
-        # testVisualize(best_net, test_data_tau[14][0])
-        best_net = resample_net_MG_best(results_dict, maxgen=maxgen)
-        resampled_networks.append(best_net)
-
-    unique_tau_list = list(set(tau_list)) # only go once through each tau
-    for tau in unique_tau_list:
-        test_results[tau] = []
-        print("Testing for tau = " + str(tau))
-        error_margin = results_dict['error margin']
-        for resample, net in enumerate(resampled_networks):
-            print("Resample " + str(resample))
-            val, model, net = retrain_net_MG(net, results_dict, tau)
-            _, t_performance = test_net_MG(net, model, error_margin, test_data_tau[tau])
-            test_results[tau].append(t_performance)
-    # savepath
-    save_path = path[:-2] + '_gen' + str(maxgen) + '_test_optimized.p'
-    print("Saving results to " + save_path)
-    with open(save_path, 'wb') as f:
-        pkl.dump(test_results, f)
+        unique_tau_list = list(set(tau_list)) # only go once through each tau
+        for tau in unique_tau_list:
+            test_results[tau] = []
+            print("Testing for tau = " + str(tau))
+            error_margin = results_dict['error margin']
+            for resample, net in enumerate(resampled_networks):
+                print("Resample " + str(resample))
+                val, model, net = retrain_net_MG(net, results_dict, tau)
+                _, t_performance = test_net_MG(net, model, error_margin, test_data_tau[tau])
+                test_results[tau].append(t_performance)
+        # savepath
+        save_path = path[:-2] + '_gen' + str(maxgen) + '_test_optimized.p'
+        print("Saving results to " + save_path)
+        with open(save_dir+save_path, 'wb') as f:
+            pkl.dump(test_results, f)
