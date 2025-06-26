@@ -6,6 +6,7 @@ from utils import single_sample_NRSE, eval_candidate_signal_gen_horizon
 from datetime import date
 import os 
 import argparse
+from tqdm import tqdm
 from utils import createNARMA30
 from utils import eval_candidate_lag_gridsearch_NARMA
 # narma_INPUT = createNARMA30(200)
@@ -211,8 +212,14 @@ if __name__ == '__main__':
             resampled_networks.append(best_net)
 
         error_margin = 0.2 #results_dict['error margin']
-        for resample, net in enumerate(resampled_networks):
-            print("Resample " + str(resample))
+        progress_bar = tqdm(
+            enumerate(resampled_networks),
+            total=resamples,
+            unit="resample",
+            bar_format="{percentage:3.0f}%|{bar:20}{r_bar}",
+        )
+        for resample, net in progress_bar:
+            # print("Resample " + str(resample))
             val, model, net = retrain_net_NARMA(net[0], results_dict)
             _, t_performance = test_net_NARMA(net, model, error_margin, test_data)
             test_results.append(t_performance)
