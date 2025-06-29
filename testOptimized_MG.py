@@ -127,9 +127,9 @@ if __name__ == '__main__':
     save_dir = "./test_results_MG/"
 
     # Load data
-    print("Loading hyperparameter optimization results from " + path)
     for path in os.listdir(path_dir):
-        with open(path, 'rb') as f:
+        print("Loading hyperparameter optimization results from " + path)
+        with open(path_dir+path, 'rb') as f:
             results_dict = pkl.load(f)
 
         tau_list = results_dict['tau list'] # get tau range from any of the results dict
@@ -139,13 +139,13 @@ if __name__ == '__main__':
         # n_test_samples = 502
         test_data_tau = {}
         warmup = 400
-        for tau in tau_list:
-            test_data = []
-            for seq in range(n_test_sequences):
-                test_sequence = datasets.mackey_glass(n_test_samples + warmup, tau=tau,
-                                                x0=np.random.uniform(x0_range[0], x0_range[1]))
-                test_data.append(test_sequence)
-            test_data_tau[tau] = test_data
+        # for tau in tau_list:
+        test_data = []
+        for seq in range(n_test_sequences):
+            test_sequence = datasets.mackey_glass(n_test_samples + warmup, tau=tau,
+                                            x0=np.random.uniform(x0_range[0], x0_range[1]))
+            test_data.append(test_sequence)
+        # test_data_tau[tau] = test_data
 
         test_results = {}
 
@@ -158,16 +158,16 @@ if __name__ == '__main__':
             best_net = resample_net_MG_best(results_dict, maxgen=maxgen)
             resampled_networks.append(best_net)
 
-        unique_tau_list = list(set(tau_list)) # only go once through each tau
-        for tau in unique_tau_list:
-            test_results[tau] = []
-            print("Testing for tau = " + str(tau))
-            error_margin = results_dict['error margin']
-            for resample, net in enumerate(resampled_networks):
-                print("Resample " + str(resample))
-                val, model, net = retrain_net_MG(net, results_dict, tau)
-                _, t_performance = test_net_MG(net, model, error_margin, test_data_tau[tau])
-                test_results[tau].append(t_performance)
+        # unique_tau_list = list(set(tau_list)) # only go once through each tau
+        # for tau in unique_tau_list:
+        #     test_results[tau] = []
+        #     print("Testing for tau = " + str(tau))
+        error_margin = results_dict['error margin']
+        for resample, net in enumerate(resampled_networks):
+            print("Resample " + str(resample))
+            val, model, net = retrain_net_MG(net, results_dict, tau)
+            _, t_performance = test_net_MG(net, model, error_margin, test_data_tau[tau])
+            test_results[tau].append(t_performance)
         # savepath
         save_path = path[:-2] + '_gen' + str(maxgen) + '_test_optimized.p'
         print("Saving results to " + save_path)

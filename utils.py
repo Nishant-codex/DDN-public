@@ -1075,6 +1075,16 @@ def memory_capacity(network, max_delay, sequence_length, z_function=None, warmup
 
     return m_caps
 
+def autocorrelation(data, max_lag):
+    autocorrs = [1]
+
+    for i in range(1, max_lag):
+        current_data = data[:-i, 0]
+        lagged_data = data[i:, 0]
+        autocorr = np.corrcoef(current_data, lagged_data)[0, 1]
+        autocorrs.append(autocorr)
+    return autocorrs
+
 def act_dimensionality(network_activity, variance_threshold=.95):
     _, s, _ = np.linalg.svd(network_activity)
     dim = 0
