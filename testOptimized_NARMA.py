@@ -6,6 +6,7 @@ from utils import single_sample_NRSE, eval_candidate_signal_gen_horizon
 from datetime import date
 import os 
 import argparse
+from tqdm import tqdm
 from utils import createNARMA30
 from utils import eval_candidate_lag_gridsearch_NARMA
 # narma_INPUT = createNARMA30(200)
@@ -136,7 +137,7 @@ def get_best_candidate(dict, gen_max, multitask=False):
     best_gen_ind = np.argmin(best_gen_scores)
     best_candidate_ind = np.argmin(best_candidates[best_gen_ind])
     return best_gen_ind, best_candidate_ind
-    
+
 def sample_best_net(dict, n, gen_max, multitask=False):
     """_summary_
 
@@ -172,7 +173,6 @@ if __name__ == '__main__':
     # parser.add_argument("-s", "--testsequences", action="store", type=int, default=5, help="Number of test sequences per network")
     # parser.add_argument("-g", "--maxgen", action="store", type=int, default=None, help="Takes best up to this generation")
 
-
     # args = parser.parse_args()
     # config = vars(args)
     resamples = 100 #config['resamples']
@@ -182,13 +182,18 @@ if __name__ == '__main__':
     maxgen = 150 #config['maxgen']
     save_dir = "./test_results_NARMA/"
     # Load data
-    for path in os.listdir(path_dir):
-    # path  = "2024-09-26_single_task_exp_BL_dist_decay_net_wide_gen150_test_optimized.p"
+    for path in tqdm(os.listdir(path_dir)):
+        # path  = "2024-09-26_single_task_exp_BL_dist_decay_net_wide_gen150_test_optimized.p"
         print("Loading hyperparameter optimization results from " + path)
+
+        save_path = path[:-2] + "_gen_" + str(maxgen) + "_test_optimized.p"
+
+        if os.path.exists(save_path):
+            print("skipping result!")
+            continue
 
         with open(path_dir+path, 'rb') as f:
             results_dict = pkl.load(f)
-
 
         # Generate test data
         n_test_samples = 502
@@ -211,13 +216,18 @@ if __name__ == '__main__':
             resampled_networks.append(best_net)
 
         error_margin = 0.2 #results_dict['error margin']
-        for resample, net in enumerate(resampled_networks):
-            print("Resample " + str(resample))
+        progress_bar = tqdm(
+            enumerate(resampled_networks),
+            total=resamples,
+            unit="resample",
+            bar_format="{percentage:3.0f}%|{bar:20}{r_bar}",
+        )
+        for resample, net in progress_bar:
+            # print("Resample " + str(resample))
             val, model, net = retrain_net_NARMA(net[0], results_dict)
             _, t_performance = test_net_NARMA(net, model, error_margin, test_data)
             test_results.append(t_performance)
 
-        save_path = path[:-2] + '_gen_' + str(maxgen) + '_test_optimized.p'
         print("Saving results to " + save_dir+save_path)
         with open(save_dir+save_path, 'wb') as f:
             pkl.dump(test_results, f)
