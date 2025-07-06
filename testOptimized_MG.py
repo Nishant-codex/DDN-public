@@ -132,22 +132,23 @@ if __name__ == '__main__':
         with open(path_dir+path, 'rb') as f:
             results_dict = pkl.load(f)
 
-        tau_list = results_dict['tau list'] # get tau range from any of the results dict
+        # tau_list = results_dict['tau list'] # get tau range from any of the results dict
         x0_range = results_dict['start value range']
 
         # Generate test data
         # n_test_samples = 502
         test_data_tau = {}
         warmup = 400
+        tau = 17 # use a fixed tau for testing, can be changed to loop through tau_list
         # for tau in tau_list:
         test_data = []
         for seq in range(n_test_sequences):
-            test_sequence = datasets.mackey_glass(n_test_samples + warmup, tau=tau,
+            test_sequence = datasets.mackey_glass(n_test_samples + warmup, tau=17,
                                             x0=np.random.uniform(x0_range[0], x0_range[1]))
             test_data.append(test_sequence)
         # test_data_tau[tau] = test_data
 
-        test_results = {}
+        test_results = []
 
         resampled_networks = []
         print("Sample networks")
@@ -166,8 +167,8 @@ if __name__ == '__main__':
         for resample, net in enumerate(resampled_networks):
             print("Resample " + str(resample))
             val, model, net = retrain_net_MG(net, results_dict, tau)
-            _, t_performance = test_net_MG(net, model, error_margin, test_data_tau[tau])
-            test_results[tau].append(t_performance)
+            _, t_performance = test_net_MG(net, model, error_margin, test_data)
+            test_results.append(t_performance)
         # savepath
         save_path = path[:-2] + '_gen' + str(maxgen) + '_test_optimized.p'
         print("Saving results to " + save_path)
