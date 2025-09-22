@@ -117,10 +117,20 @@ def createNARMA10(length=10000):
     return createNARMA(length=length, system_order=10, coef=[.3, .05, 1.5, .1])
 
 def createNARMA30(length=10000):
+    """Create NARMA30 task data.    
+    NARMA30 is a more complex version of the NARMA10 task, with a higher system order and different coefficients."""
+    # Coefficients for NARMA30 task
+    # These coefficients are chosen to create a more complex task than NARMA10 
+    # and are based on the original NARMA30 task definition.
+    # The coefficients are adjusted to ensure the task remains challenging.
+    # Coefficients for NARMA30 task     
+    # Coefficients: [0.2, 0.04, 1.5, 0.001]
+    # System order: 30
+    # Length: 10000
+    # Note: The coefficients and system order can be adjusted to create different variations of the NARMA30 task. 
+
+    
     return createNARMA(length=length, system_order=30, coef=[.2, .04, 1.5, .001])
-
-
-
 
 def eval_candidate_lag_gridsearch_NARMA(network, train_data, val_data, warmup=400,
                                         lag_grid=range(0, 15), alphas=[10e-14, 10e-13, 10e-12]):
@@ -1086,6 +1096,16 @@ def autocorrelation(data, max_lag):
     return autocorrs
 
 def act_dimensionality(network_activity, variance_threshold=.95):
+    """ Returns the number of principal components required to explain variance_threshold of the variance
+    in the network activity.
+    :param network_activity: ndarray
+        Neurons x Time matrix of network activity
+    :param variance_threshold: float
+        Value between 0 and 1 indicating the amount of variance that should be explained
+    :return: int
+        Number of principal components required to explain variance_threshold of the variance
+    """
+    
     _, s, _ = np.linalg.svd(network_activity)
     dim = 0
     var_explained = 0

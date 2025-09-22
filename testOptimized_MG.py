@@ -18,11 +18,13 @@ def resample_net_MG_best(data_dict, maxgen=None):
     best_ind = np.argmax(best_pop)
     all_params = data_dict['parameters']
     best_params = all_params[best_gen, best_ind]
+    print("Best generation: " + str(best_gen) + ", best individual: " + str(best_ind))
     net = data_dict['example net']
     best_net = net.get_new_network_from_serialized(best_params)
     return best_net
 
 def resample_net_MG_worst(data_dict):
+    
     validation_scores = data_dict['validation performance']
     score = np.min(validation_scores, axis=-1)
     max_gens = np.max(score, axis=-1)
@@ -37,13 +39,16 @@ def resample_net_MG_worst(data_dict):
     return best_net
 
 def retrain_net_MG(best_net, data_dict, tau):
+
     best_net.reset_network()
-    x0_range = data_dict['start value range']
-    n_seq = data_dict['number of sequences']
-    n_sam = data_dict['number of samples']
-    tau_range = [tau, tau]
+
+    x0_range     = data_dict['start value range']
+    n_seq        = data_dict['number of sequences']
+    n_sam        = data_dict['number of samples']
+    tau_range    = [tau, tau]
     error_margin = data_dict['error margin']
-    alphas = data_dict['alpha grid']
+    alphas       = data_dict['alpha grid']
+
     val, model, net = eval_candidate_signal_gen_horizon(best_net,
                                                           n_seq['unsupervised'],
                                                           n_seq['supervised'],
@@ -151,6 +156,7 @@ if __name__ == '__main__':
         test_results = []
 
         resampled_networks = []
+
         print("Sample networks")
 
         for resample in range(resamples):
@@ -163,6 +169,7 @@ if __name__ == '__main__':
         # for tau in unique_tau_list:
         #     test_results[tau] = []
         #     print("Testing for tau = " + str(tau))
+
         error_margin = results_dict['error margin']
         for resample, net in enumerate(resampled_networks):
             print("Resample " + str(resample))
