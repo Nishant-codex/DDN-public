@@ -188,7 +188,7 @@ if __name__ == '__main__':
 
         save_path = path[:-2] + "_gen_" + str(maxgen) + "_test_optimized.p"
 
-        if os.path.exists(save_path):
+        if os.path.exists(save_dir+save_path):
             print("skipping result!")
             continue
 
