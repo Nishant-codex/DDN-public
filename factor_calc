@@ -1,0 +1,55 @@
+import glob
+import os
+import numpy as np
+from factorial_analysis import factorial_analysis
+
+
+def load_spectra(out_dir="spectra"):
+    """Load all spectra from .npz files saved by save_spectrum."""
+    eigvals_by_config = {}
+
+    for path in sorted(glob.glob(os.path.join(out_dir, "*.npz"))):
+        stem = os.path.basename(path).removesuffix(".npz")
+        try:
+            task, delay, decay_mode, decay_scope = stem.split("__")
+        except ValueError:
+            print(f"Skipping {path}: filename must be task__delay__mode__scope.npz")
+            continue
+
+        with np.load(path) as data:
+            eigvals = data["eigvals"]
+
+        key = (task, delay, decay_mode, decay_scope)
+        eigvals_by_config[key] = eigvals
+
+    return eigvals_by_config
+
+
+def main(dir_name="./timescale_factors/"):
+    eigvals_by_config = load_spectra(out_dir=dir_name)
+    if not eigvals_by_config:
+        raise SystemExit(
+            "No spectra found in ./spectra/. Run save_spectrum for each "
+            "configuration first, or edit load_spectra()."
+        )
+
+    config_df, effect_df = factorial_analysis(eigvals_by_config)
+
+    print(f"Loaded {len(eigvals_by_config)} configurations:")
+    for k in sorted(eigvals_by_config):
+        print(f"  {k}: {len(eigvals_by_config[k])} eigenvalues")
+    print()
+
+    print("=== Per-configuration summaries ===")
+    print(config_df.to_string(index=False))
+    print()
+    print("=== Effect table (variance decomposition) ===")
+    print(effect_df.to_string(index=False))
+
+    config_df.to_csv("factorial_config_summary.csv", index=False)
+    effect_df.to_csv("factorial_effect_table.csv", index=False)
+    print("\nWrote factorial_config_summary.csv and factorial_effect_table.csv")
+
+
+if __name__ == "__main__":
+    main()
